@@ -163,7 +163,7 @@ def load_entries(directory: Traversable) -> tuple[Opportunity, ...]:
 @cache
 def load_catalog() -> tuple[Opportunity, ...]:
     """The catalog shipped inside the package."""
-    return load_entries(files("portfolio_atlas").joinpath("opportunities"))
+    return load_entries(files(__package__).joinpath("opportunities"))
 
 
 # ---------------------------------------------------------------- search

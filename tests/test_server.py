@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.request
 
 import pytest
 from mcp import Client, StdioServerParameters
@@ -87,11 +88,17 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-@pytest.fixture
-def http_server():
+HTTP_COMMANDS = {
+    "cli": ["-m", "portfolio_atlas.server", "--http", "--port", "{port}"],
+    "asgi": ["-m", "uvicorn", "portfolio_atlas.asgi:app", "--port", "{port}"],  # how Vercel loads it
+}
+
+
+@pytest.fixture(params=sorted(HTTP_COMMANDS))
+def http_server(request):
     port = free_port()
-    proc = subprocess.Popen([sys.executable, "-m", "portfolio_atlas.server", "--http", "--port", str(port)],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    args = [a.format(port=port) for a in HTTP_COMMANDS[request.param]]
+    proc = subprocess.Popen([sys.executable, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(100):
             try:
@@ -101,13 +108,34 @@ def http_server():
                 time.sleep(0.1)
         else:
             pytest.fail("HTTP server did not start")
-        yield f"http://127.0.0.1:{port}/mcp"
+        yield f"http://127.0.0.1:{port}"
     finally:
         proc.terminate()
         proc.wait(timeout=10)
 
 
-async def test_streamable_http_entry_point(http_server):
-    async with Client(http_server) as client:
+@pytest.mark.parametrize("mode", ["auto", "legacy"])  # 2026-07-28 stateless protocol, and the older initialize handshake
+async def test_streamable_http(http_server, mode):
+    async with Client(f"{http_server}/mcp", mode=mode) as client:
         doc = payload(await client.call_tool("fetch", {"id": "oss-contributor-retention"}))
         assert "Fields observed in the data" in doc["text"]
+
+
+def test_http_accepts_public_hostnames_and_answers_with_json(http_server):
+    """Hosted behind a public domain, the server must not reject the Host header as DNS rebinding."""
+    body = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "test", "version": "0"}}}
+    request = urllib.request.Request(
+        f"{http_server}/mcp", data=json.dumps(body).encode(), method="POST",
+        headers={"Host": "portfolio-atlas.example.com", "Content-Type": "application/json",
+                 "Accept": "application/json, text/event-stream"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as resp:
+        assert resp.headers["Content-Type"].startswith("application/json")
+        assert json.loads(resp.read())["result"]["serverInfo"]["name"] == "portfolio-atlas"
+
+
+def test_landing_page_points_to_the_mcp_endpoint(http_server):
+    with urllib.request.urlopen(f"{http_server}/", timeout=10) as resp:
+        text = resp.read().decode()
+    assert "/mcp" in text and REPO_URL in text and f"{len(ALL_IDS)} verified" in text

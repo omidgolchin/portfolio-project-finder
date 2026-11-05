@@ -5,17 +5,24 @@ ChatGPT connectors and deep research; Claude can use any tools, so one shape ser
 
 Run locally (stdio):            portfolio-atlas
 Run as an HTTP server:          portfolio-atlas --http [--host 127.0.0.1] [--port 8000]
+Host it (e.g. Vercel):          any ASGI server can serve portfolio_atlas.asgi:app
 """
 
 from __future__ import annotations
 
 import argparse
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
+from starlette.responses import PlainTextResponse
 from typing_extensions import TypedDict  # typing.TypedDict breaks pydantic schemas before Python 3.12
+
+if TYPE_CHECKING:
+    from starlette.applications import Starlette
+    from starlette.requests import Request
 
 from . import __version__
 from .catalog import REPO_URL, Opportunity, load_catalog, search as search_catalog, to_markdown
@@ -98,17 +105,44 @@ def build_server(entries: tuple[Opportunity, ...] | None = None) -> MCPServer:
     return server
 
 
+def http_app() -> Starlette:
+    """The Streamable HTTP app, served at /mcp, with a short plain-text landing page at /.
+
+    Stateless mode with JSON responses suits serverless hosts: any instance can answer any request
+    and nothing has to survive between requests. DNS-rebinding protection is off because it guards
+    servers bound to localhost, while this one serves public, read-only data.
+    """
+    server = build_server()
+    count = len(load_catalog())
+
+    @server.custom_route("/", methods=["GET"])
+    async def landing(request: Request) -> PlainTextResponse:
+        return PlainTextResponse(
+            f"Portfolio Atlas {__version__}: {count} verified data-analysis portfolio project opportunities.\n\n"
+            "This is an MCP server. Connect an MCP client (Claude, ChatGPT, ...) to the /mcp path on this host.\n"
+            "Tools: search, fetch (read-only, no authentication).\n"
+            f"Source, documentation and setup instructions: {REPO_URL}\n"
+        )
+
+    return server.streamable_http_app(
+        stateless_http=True,
+        json_response=True,
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="portfolio-atlas", description=__doc__.splitlines()[0])
     parser.add_argument("--http", action="store_true", help="serve Streamable HTTP at /mcp instead of stdio")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
-    server = build_server()
     if args.http:
-        server.run("streamable-http", host=args.host, port=args.port)
+        import uvicorn  # installed with the MCP SDK
+
+        uvicorn.run(http_app(), host=args.host, port=args.port)
     else:
-        server.run()
+        build_server().run()
 
 
 if __name__ == "__main__":
