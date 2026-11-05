@@ -1,0 +1,134 @@
+id: citibike-station-imbalance
+title: "Where do the bikes pile up? Station imbalance and rebalancing need in Citi Bike trips"
+summary: >
+  Use New York's Citi Bike trip records to build a station-by-hour panel of departures and arrivals,
+  find the stations that drain or fill at commute peaks, and estimate a lower bound on daily
+  rebalancing. This is an operations-analytics framing of bike-share data, which is more often used
+  for marketing-style member-versus-casual comparisons, and it requires fixing identifiers that
+  silently distort the headline number.
+verified_on: 2026-11-05
+roles:
+  - Operations analyst
+  - Data analyst (mobility / transport)
+  - BI analyst
+  - Supply chain / logistics analyst
+skills:
+  - SQL on multi-million-row files (DuckDB)
+  - Event unpivoting and panel aggregation
+  - Cleaning identifiers
+  - Basic geospatial mapping
+  - Operational metric design
+  - Communicating limitations of observational data
+domains: [operations, transportation, urban mobility]
+questions:
+  - Which stations reliably drain or fill during weekday morning and evening peaks?
+  - At minimum, how many bikes per day would need moving to rebalance stations?
+  - Do e-bikes and classic bikes show different flow patterns?
+  - How stable are the hotspots across months and seasons?
+employer_relevance: >
+  Balancing supply and demand across locations is a common operations problem (fleets, warehouses,
+  retail stock, staffing). This project shows you can turn an event log into an operational metric,
+  clean identifiers that break aggregations, and state clearly what the data cannot tell you (censored
+  demand), which is what operations stakeholders need from an analyst.
+differentiation:
+  common_version: >
+    A widely used course case study ("Cyclistic", built on Chicago's Divvy data) that compares member
+    and casual riders to inform marketing.
+  how_this_differs: >
+    An operations question (where bikes accumulate and how many need moving) on NYC data, built as a
+    station-hour panel, with the identifier and censoring problems handled explicitly.
+datasets:
+  - name: Citi Bike System Data (trip histories)
+    publisher: Citi Bike NYC
+    landing_url: https://s3.amazonaws.com/tripdata/index.html
+    access: >
+      Public S3 bucket, no key: https://s3.amazonaws.com/tripdata/<YYYYMM>-citibike-tripdata.zip for
+      NYC (monthly files from 202401; yearly files for 2013-2023; a JC- prefix marks Jersey City). The
+      official page, https://citibikenyc.com/system-data, was not reachable from the verification
+      environment.
+    format: Zipped CSV; a month is split into parts of about 188 MB (April 2026 has 4 parts, 754 MB uncompressed)
+    license:
+      name: Citi Bike Data License Agreement
+      url: https://ride.citibikenyc.com/data-sharing-policy
+      status: reported
+      basis: search-result excerpt; the full text was not reachable from the verification environment
+      note: >
+        Reportedly granted by Lyft Bikes and Scooters, LLC for any lawful purpose, but it bars hosting or
+        redistributing the data as a standalone dataset. Link to the source instead of committing raw
+        files, and read the agreement before publishing.
+    fields_observed: [ride_id, rideable_type, started_at, ended_at, start_station_name, start_station_id,
+                      end_station_name, end_station_id, start_lat, start_lng, end_lat, end_lng, member_casual]
+    facts:
+      - status: verified
+        text: "April 2026: 3,860,371 trips with unique ride_id, all 30 days present, 2,236 distinct start-station ids."
+      - status: verified
+        text: "Zip size is not a completeness signal: the April 2026 zip is 165 MB against 575 MB for March and 917 MB for May, yet April covers every day."
+      - status: verified
+        text: "The source CSV records the same station under several ids: 59 end-station names appear with more than one id, mostly trailing-zero variants (6098.10 vs 6098.1) plus trailing underscores (5303.06_). Keying by raw id instead of name raises the estimated daily imbalance from about 4,662 to 6,677 bikes."
+      - status: verified
+        text: "2,767 trips end at ids outside the usual NNNN.NN form, including service locations such as 'Shop Morgan' and 'Morgan Bike Mechanics' (id SYS016)."
+      - status: verified
+        text: "10,498 trips (0.27%) have no end station and 1,939 have no start station; 766 last over 24 hours; 72.3% are e-bike trips."
+      - status: verified
+        text: "The schema changed between eras: September 2019 files have tripduration, starttime, bikeid, usertype, birth year and gender; by February 2021 the current 13-column schema is in use (checked on Jersey City files)."
+      - status: verified
+        text: On 2026-11-05 the newest NYC file was 202609 (uploaded 2026-10-05), about five weeks after month end.
+      - status: unverified
+        basis: inferred from the hourly pattern, not documented
+        text: Timestamps carry no time-zone marker; the commute-hour pattern is consistent with New York local time.
+    checks:
+      - url: https://s3.amazonaws.com/tripdata/202604-citibike-tripdata.zip
+        kind: reachable
+preparation:
+  effort: medium
+  effort_note: >
+    The difficulty is volume and identifiers, not messy values: about 3.9 million rows per month
+    (summer months are about 1 GB zipped). Query the CSVs directly with DuckDB or Polars rather than
+    loading several months into memory.
+  steps:
+    - Download one or more monthly zips and query the CSV parts directly (no need to concatenate them).
+    - Read station ids as text, never as numbers; build a station table keyed by name (or a normalised id) and exclude service locations.
+    - Unpivot trips into departure and arrival events, restricted to the month (trips can end in the next month).
+    - Aggregate to a station x hour x day-type panel and compute net flow.
+    - Rank drain and fill stations by peak period, estimate daily imbalance, and map stations by latitude and longitude.
+  pitfalls:
+    - Raw station ids split stations (6098.10 vs 6098.1), inflating the April 2026 imbalance estimate by about 43%.
+    - Count weekdays from the month itself, not from event dates, or trips ending after midnight on the last day add a stray day.
+    - Combining pre-2021 and current files needs a column mapping, and some fields have no equivalent.
+    - Don't commit raw trip files to a public repository; the license reportedly forbids standalone redistribution.
+feasibility:
+  supports:
+    - status: verified
+      text: Station-level departures, arrivals and net flow by hour and day type for a full month, processed with DuckDB.
+    - status: verified
+      text: Lists of stations that drain or fill at the weekday morning peak, and a daily imbalance estimate.
+    - status: unverified
+      basis: only April 2026 was processed
+      text: Seasonal and year-over-year comparisons on the current schema.
+  limits:
+    - "Demand is censored: an empty station records no departures and a full one no arrivals, so trips understate demand exactly where imbalance is worst."
+    - Operator rebalancing moves, dock outages and station capacity are not in the trip data.
+    - Daily net imbalance is a lower bound on rebalancing, because intra-day swings can need more moves.
+    - The current schema has no rider demographics (birth year and gender were dropped).
+  probe:
+    script: probes/citibike_station_imbalance.py
+    run_on: 2026-11-05
+    data_snapshot: 202604-citibike-tripdata.zip (uploaded 2026-05-04)
+    findings:
+      - "Weekday 07:00-09:59 over 22 weekdays, stations keyed by name: the largest net outflow is W 43 St & 10 Ave (-60.3 bikes per weekday), then E 10 St & Ave A (-56.5); the largest net inflow is 9 Ave & W 33 St (+122.3), then E 47 St & Park Ave (+81.9)."
+      - "Average daily net imbalance (sum over stations of |arrivals - departures|, divided by 2): about 4,662 bikes per day keyed by station name, against 6,677 keyed by raw station id, an artifact of inconsistent ids."
+scope:
+  minimum_deliverable:
+    - A station x hour net-flow table for one month, with documented cleaning rules.
+    - Top drain and fill stations for the weekday AM and PM peaks, on a map.
+    - An imbalance estimate with a clear statement of what it excludes (censored demand, operator moves).
+  extensions:
+    - status: unverified
+      basis: only April 2026 was processed
+      text: Compare seasons or years to see whether imbalance hotspots are stable.
+    - status: unverified
+      basis: the noaa-ghcn-pds bucket was reachable, but its fields were not inspected
+      text: Add daily weather from NOAA GHCN-Daily (public S3 bucket) to separate weather from structural demand.
+    - status: unverified
+      basis: not tested
+      text: Collect live GBFS station-status feeds to measure how long stations sit empty or full.

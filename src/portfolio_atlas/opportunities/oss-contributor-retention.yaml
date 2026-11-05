@@ -1,0 +1,124 @@
+id: oss-contributor-retention
+title: "Do first-time contributors come back? Cohort retention from open-source git history"
+summary: >
+  Treat a large open-source project's commit history as a real behavioural event log and build the
+  product-analytics staples (acquisition cohorts, retention curves, time to second action) while
+  solving the identity-resolution, bot-filtering and censoring problems that real event data has and
+  tutorial datasets hide.
+verified_on: 2026-11-05
+roles:
+  - Product analyst
+  - Data analyst
+  - Analytics engineer
+  - Community / developer-relations analyst
+skills:
+  - Cohort retention analysis
+  - Survival (time-to-event) analysis
+  - Identity resolution
+  - Event-log modelling in SQL or pandas
+  - Handling right-censoring
+  - Privacy-aware reporting
+domains: [product analytics, open source, developer tools]
+questions:
+  - What share of first-time contributors make another commit within 90 or 365 days, and how has that changed by cohort?
+  - How long do returning contributors take to make their second commit?
+  - "How concentrated is the work: what share of commits comes from the top 1% or 10% of contributors?"
+  - How much do identity-resolution and bot-filtering choices change the answers?
+employer_relevance: >
+  Retention cohorts are a staple of product analytics: do new users come back? This project shows you
+  can build cohorts and retention curves from a raw event log and handle the problems real behavioural
+  data has (duplicate identities, bots, incomplete observation windows), which tidy tutorial datasets
+  hide.
+differentiation:
+  common_version: Customer cohort retention on the UCI Online Retail dataset or a synthetic e-commerce dataset.
+  how_this_differs: >
+    Uses real, current behavioural events that anyone can re-extract to check your work, and forces the
+    unglamorous parts of retention analysis (identity resolution, bot exclusion, censoring) that tidy
+    datasets skip.
+datasets:
+  - name: Git commit history of pandas-dev/pandas (the method applies to any public repository)
+    publisher: pandas project contributors, hosted on GitHub
+    landing_url: https://github.com/pandas-dev/pandas
+    access: >
+      `git clone --bare --filter=tree:0 https://github.com/pandas-dev/pandas.git` downloads commit
+      metadata without file contents (it took seconds in verification), then export with
+      `git log --format=...`. No API key is needed.
+    format: git repository, exported to delimited text with git log
+    license:
+      name: BSD-3-Clause (repository license)
+      url: https://opensource.org/license/bsd-3-clause
+      status: verified
+      basis: LICENSE file on main
+      note: >
+        The license covers the code. Commit metadata contains personal data (names and emails):
+        publish only aggregates, and hash or pseudonymise identities.
+    fields_observed: [commit hash (%H), author name (%an), author email (%ae), author date (%aI),
+                      committer date (%cI), Co-authored-by trailers]
+    facts:
+      - status: verified
+        text: "39,737 commits reachable from main at commit ce5c788 (2026-11-04), the first authored 2009-07-31."
+      - status: verified
+        text: "4,307 distinct author emails; 208 author names appear with more than one email, and there is no .mailmap file on main, so identity resolution is up to you."
+      - status: verified
+        text: "8,365 commits use GitHub noreply addresses of the form <number>+<username>@users.noreply.github.com."
+      - status: verified
+        text: "Bot accounts are present: dependabot[bot] (140 commits), github-actions[bot] (51), pre-commit-ci[bot] (34). A naive 'bot' substring filter also matches addresses that look like people's, such as three at datarobot.com and one at bottomlesspit.org (5 such addresses, 6 commits)."
+      - status: verified
+        text: "3,251 commits carry Co-authored-by trailers, i.e. credit that author-only counts miss."
+    checks:
+      - url: https://github.com/pandas-dev/pandas.git/info/refs?service=git-upload-pack
+        kind: reachable
+preparation:
+  effort: medium
+  effort_note: >
+    Extraction is quick and the data is small. The effort goes into identity resolution, bot handling,
+    and defining what counts as a contribution and as "retained".
+  steps:
+    - Make a commit-only clone (--filter=tree:0) and export hash, author name, email and date plus Co-authored-by trailers with git log --format.
+    - Normalise emails and build an identity map (noreply addresses, one name with several emails, a .mailmap if the project has one), documenting every merge rule.
+    - Exclude bots with an explicit, reviewed list rather than a substring match.
+    - Decide whether co-authors count as contributors, then build one event table (person, timestamp, event type).
+    - Build cohort tables by first-contribution month or year and retention or survival curves, marking censored cohorts.
+  pitfalls:
+    - "Right-censoring: compare cohorts only over windows they have fully lived through."
+    - Substring bot filters remove real people; review the matches by hand.
+    - Merge conventions (squash vs merge commits) change what one commit means; check them before comparing projects or eras.
+    - Author date and commit date differ after rebases; pick one and say which.
+    - Emails are personal data; never publish them.
+feasibility:
+  supports:
+    - status: verified
+      text: Yearly acquisition cohorts and N-day return rates from author email and date.
+    - status: unverified
+      basis: same inputs; not computed in the probe
+      text: Monthly cohorts, retention curves, time-to-second-commit survival curves and contributor concentration.
+    - status: unverified
+      basis: only pandas was tested
+      text: Running the same pipeline on other large repositories.
+  limits:
+    - "Commits are only one kind of contribution: reviews, issues and discussions are not in git history."
+    - Git history shows who came back, not why others left; avoid causal claims.
+    - Recent cohorts are right-censored. On the verification date, the 2026 cohort and part of the 2025 cohort had not had a full year to return.
+    - Email-based identity both splits people (several emails) and can merge them (shared addresses).
+  probe:
+    script: probes/oss_contributor_retention.py
+    run_on: 2026-11-05
+    data_snapshot: pandas-dev/pandas main at commit ce5c788 (2026-11-04)
+    findings:
+      - "One-year return rate (another commit 1-365 days after the first), by UTC cohort year, with lower-cased email as identity and names or emails containing 'bot' excluded: 2015-2022 cohorts range from 27.2% to 30.9%; 2023 22.0%; 2024 26.9%; 2025 27.2% (partly censored); 2026 21.0% (censored, not comparable)."
+      - "Cohort sizes: 198 newcomers in 2015, peaking at 504 in 2020, then between 254 and 324 per year in 2021-2025."
+scope:
+  minimum_deliverable:
+    - A cohort retention table or heatmap by first-contribution year or quarter, with censored cells marked.
+    - A survival curve of time to second commit.
+    - A short write-up of the identity-resolution rules and how much they changed the results.
+  extensions:
+    - status: unverified
+      basis: only pandas was tested
+      text: Compare three to five projects of different sizes with the same pipeline.
+    - status: unverified
+      basis: not tested; needs file paths, i.e. a blob-less rather than commit-only clone
+      text: Model return probability by type of first contribution (docs, tests or code).
+    - status: unverified
+      basis: GitHub API access was not tested
+      text: Add pull-request review latency from the GitHub API.

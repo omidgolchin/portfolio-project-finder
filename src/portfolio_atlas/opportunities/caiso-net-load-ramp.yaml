@@ -1,0 +1,133 @@
+id: caiso-net-load-ramp
+title: "Is California's duck curve still deepening? Net-load ramps from hourly EIA-930 grid data"
+summary: >
+  Use EIA's hourly balancing-authority data, cleaned and published by Catalyst Cooperative's PUDL
+  project, to compute CAISO's net load (demand minus wind and solar), measure the midday trough and
+  evening ramp each spring since 2019, and investigate why the trend appears to reverse in 2026. This
+  is a domain-grounded time-series project rather than a generic forecasting exercise.
+verified_on: 2026-11-05
+roles:
+  - Energy / utility analyst
+  - Data analyst (time series)
+  - Energy market or policy analyst
+skills:
+  - Time-series wrangling
+  - Time zones and daylight saving time
+  - Working with Parquet
+  - Reading data dictionaries
+  - Handling category changes over time
+  - Domain metric design (net load, ramp)
+domains: [energy, utilities, climate]
+questions:
+  - How have CAISO's midday net-load trough and evening ramp changed each spring since 2019?
+  - What explains the apparent 2026 reversal in the April trough and ramp?
+  - Which months and hours have the steepest ramps, and how does CAISO compare with other balancing authorities?
+  - How sensitive are the results to using reported rather than adjusted values?
+employer_relevance: >
+  Utilities, grid operators, energy retailers and clean-energy companies analyse hourly load and
+  renewable output, and the evening net-load ramp is a recognised operational challenge as solar
+  grows. The project shows you can work from official data, read a data dictionary carefully and
+  investigate an unexpected result instead of only fitting a model.
+differentiation:
+  common_version: Forecasting hourly electricity consumption from a static Kaggle dataset (for example PJM hourly energy) with generic models.
+  how_this_differs: >
+    Uses current official data covering 72 balancing authorities and a domain-meaningful metric
+    (net-load trough and ramp) rather than a generic forecast, with real preparation decisions:
+    value variants, a 2024 fuel-category change, time zones and an unexplained recent reversal.
+datasets:
+  - name: EIA-930 hourly balancing authority data (PUDL release)
+    publisher: Catalyst Cooperative (PUDL), from U.S. EIA Form 930
+    landing_url: https://github.com/catalyst-cooperative/pudl
+    access: >
+      Public S3 bucket, no key:
+      https://s3.us-west-2.amazonaws.com/pudl.catalyst.coop/stable/core_eia930__hourly_operations.parquet
+      and .../stable/core_eia930__hourly_net_generation_by_energy_source.parquet ("stable" points to
+      the latest versioned release). The same bucket offers the whole PUDL database as a 9.5 GB DuckDB
+      file.
+    format: Parquet (two tables of 91 MB and 85 MB)
+    license:
+      name: CC-BY-4.0
+      url: https://creativecommons.org/licenses/by/4.0/
+      status: verified
+      basis: PUDL datapackage metadata (pudl_parquet_datapackage.json)
+      note: Attribute Catalyst Cooperative / PUDL. EIA's own terms for the underlying data were not checked.
+    fields_observed: [balancing_authority_code_eia, datetime_utc, demand_forecast_mwh, demand_reported_mwh,
+                      demand_adjusted_mwh, demand_imputed_eia_mwh, net_generation_reported_mwh,
+                      net_generation_adjusted_mwh, net_generation_imputed_eia_mwh, interchange_reported_mwh,
+                      interchange_adjusted_mwh, interchange_imputed_eia_mwh, generation_energy_source]
+    facts:
+      - status: verified
+        text: "Release v2026.10.0 (created 2026-10-14). The hourly operations table has 6,231,842 rows covering 72 balancing authorities from 2015-07-01 to 2026-09-06 (UTC)."
+      - status: verified
+        text: "The by-fuel table has 118,404,998 rows, but only 20,364,407 carry adjusted values, and the 'imputed' column is almost empty (38,985 values in total)."
+      - status: verified
+        text: "For CAISO (code CISO), fuel-level values start 2018-07-01. 'solar' and 'wind' end at 2024-07-01 07:00 UTC and the '*_wo_integrated_battery_storage' categories begin the next hour, with no overlapping hours. The '*_w_integrated_battery_storage' and 'battery_storage' categories have no values for CAISO."
+      - status: reported
+        basis: PUDL data dictionary
+        text: EIA introduced more granular fuel categories in 2024Q3, and sums across fuels can diverge significantly from total net generation.
+      - status: reported
+        basis: PUDL data dictionary
+        text: Adjusted values reflect EIA's corrections for pseudo-ties and dynamic scheduling; imputed values have outliers removed and gaps filled by EIA.
+      - status: reported
+        basis: PUDL data dictionary
+        text: Net generation typically excludes distribution-connected generators, including rooftop solar.
+    checks:
+      - url: https://s3.us-west-2.amazonaws.com/pudl.catalyst.coop/stable/core_eia930__hourly_operations.parquet
+        kind: reachable
+      - url: https://s3.us-west-2.amazonaws.com/pudl.catalyst.coop/stable/core_eia930__hourly_net_generation_by_energy_source.parquet
+        kind: reachable
+preparation:
+  effort: medium
+  effort_note: >
+    The files are tidy, small Parquet tables. The work is reading the data dictionary, choosing a
+    value variant, stitching fuel categories across the 2024 change, and handling time zones and
+    daylight saving time.
+  steps:
+    - Download the operations and by-fuel tables from the PUDL bucket and record the release version.
+    - Filter to one balancing authority and check which value columns are actually populated before choosing reported, adjusted or imputed.
+    - Sum wind and solar across the old and new category names, after confirming they do not overlap in time.
+    - Convert UTC to local time with a time-zone library, and drop or flag incomplete days.
+    - Compute net load and daily trough, peak and ramp, then chart a duck curve per year.
+  pitfalls:
+    - "'Imputed' sounds cleanest but is almost empty in the by-fuel table; check completeness before choosing a column."
+    - Summing 'solar' with the new solar categories without checking for overlap can double count. For CAISO they hand over cleanly on 2024-07-01.
+    - Converting with a fixed UTC offset ignores daylight saving time and shifts hour-of-day metrics by an hour for part of the year.
+    - April alone is not a trend; check other months before generalising.
+feasibility:
+  supports:
+    - status: verified
+      text: Hourly CAISO net load (demand minus wind and solar) from July 2018, consistent across the 2024 category change.
+    - status: verified
+      text: Daily trough, evening peak and ramp metrics by month and year.
+    - status: unverified
+      basis: fields present for all 72 balancing authorities; only CAISO was computed
+      text: The same analysis for other balancing authorities, such as ERCOT.
+  limits:
+    - Only BA-metered, mostly utility-scale generation is included; rooftop solar shows up only indirectly, as lower measured demand.
+    - These tables have no prices or curtailment, and no battery data for CAISO (the battery categories are empty).
+    - PUDL publishes versioned releases; record the one you used, since later releases may revise recent data.
+    - The results were not compared with CAISO's own published net-load figures.
+  probe:
+    script: probes/caiso_net_load_ramp.py
+    run_on: 2026-11-05
+    data_snapshot: PUDL stable release v2026.10.0 (2026-10-14)
+    findings:
+      - "Method: CAISO, April of each year, adjusted values, local time. Trough = minimum net load 09:00-16:59; ramp = maximum net load 17:00-22:59 minus the trough; 30 complete days in every year."
+      - "The midday trough fell from 9,534 MW (2019) to 4,965 MW (2024) and 5,086 MW (2025), then rose to 6,961 MW in 2026."
+      - "The evening ramp grew from 13,574 MW (2019) to 17,222 MW (2025), then fell to 15,344 MW in 2026."
+      - The probe does not explain the 2026 reversal.
+scope:
+  minimum_deliverable:
+    - A tidy hourly CAISO table from 2019 onward, with documented column choices.
+    - A duck-curve chart (average April net load by hour, one line per year) and a ramp-trend chart.
+    - "A short note on data choices: value variant, category stitching and time zones."
+  extensions:
+    - status: unverified
+      basis: only CAISO was computed
+      text: Compare ERCOT and other balancing authorities with the same code.
+    - status: unverified
+      basis: CAISO's own data sources were not checked
+      text: Investigate the 2026 reversal using CAISO's own curtailment and battery data.
+    - status: unverified
+      basis: not tested
+      text: Forecast the next day's evening ramp and evaluate against a naive baseline.
