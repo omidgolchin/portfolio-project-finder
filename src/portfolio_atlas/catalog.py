@@ -28,8 +28,8 @@ REPO_URL = "https://github.com/omidgolchin/portfolio-project-finder"
 Status = Literal["verified", "reported", "unverified"]
 
 LEGEND = (
-    "Status tags: [verified] = checked directly against the data or the publisher's own files on the "
-    "verification date; [reported] = stated by the named source but not independently tested; "
+    "Status tags: [verified] = checked directly against the data snapshot named above, or the publisher's "
+    "own files, on the verification date; [reported] = stated by the named source but not independently tested; "
     "[unverified] = plausible but not checked. 'Why employers may care' and 'How it differs' are "
     "editorial judgement, not verified facts."
 )
@@ -140,6 +140,10 @@ class Opportunity(_Model):
     def claims(self) -> list[Claim]:
         return [f for d in self.datasets for f in d.facts] + list(self.feasibility.supports) + list(self.scope.extensions)
 
+    def statuses(self) -> list[Status]:
+        """The status of every tagged statement: claims plus dataset licenses."""
+        return [c.status for c in self.claims()] + [d.license.status for d in self.datasets]
+
 
 # ---------------------------------------------------------------- loading
 
@@ -219,7 +223,8 @@ def to_markdown(e: Opportunity) -> str:
     """Render one entry as self-contained Markdown, with a status tag on every factual claim."""
     lines = [
         f"# {e.title}",
-        f"id: `{e.id}` | verified on {e.verified_on.isoformat()} | data preparation effort: {e.preparation.effort}",
+        f"id: `{e.id}` | verified on {e.verified_on.isoformat()} against {e.feasibility.probe.data_snapshot} "
+        f"| data preparation effort: {e.preparation.effort}",
         "",
         LEGEND,
         "",

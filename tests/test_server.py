@@ -68,6 +68,25 @@ async def test_fetch_returns_full_entry_with_status_tags():
         assert doc["metadata"]["claim_status_counts"]["verified"] > 0
 
 
+@pytest.mark.parametrize("entry_id", ALL_IDS)
+async def test_fetch_metadata_counts_match_the_rendered_tags(entry_id):
+    """Regression: license statuses were rendered as tags but left out of the counts."""
+    async with Client(build_server()) as client:
+        doc = payload(await client.call_tool("fetch", {"id": entry_id}))
+    fixed = {"verified": 2, "reported": 1, "unverified": 1}  # legend, plus the probe-findings heading
+    for status, count in doc["metadata"]["claim_status_counts"].items():
+        assert count == doc["text"].count(f"[{status}") - fixed[status], status
+
+
+async def test_fetch_header_names_the_data_snapshot():
+    """Regression: an assistant read 'verified on <date>' as 'one day of data'."""
+    async with Client(build_server()) as client:
+        doc = payload(await client.call_tool("fetch", {"id": "citibike-station-imbalance"}))
+    header = doc["text"].splitlines()[1]
+    assert "verified on 2026-11-05 against 202604-citibike-tripdata.zip" in header
+    assert doc["metadata"]["data_snapshot"].startswith("202604-citibike-tripdata.zip")
+
+
 async def test_fetch_unknown_id_is_a_helpful_error():
     async with Client(build_server()) as client:
         result = await client.call_tool("fetch", {"id": "titanic-survival"})

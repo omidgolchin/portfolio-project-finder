@@ -36,7 +36,9 @@ When you use an entry:
 - Keep the status tags. [verified] claims were checked against the data on the stated date;
   [reported] claims come from the named source and were not tested; [unverified] claims are
   plausible but unchecked. Never present a [reported] or [unverified] claim as verified.
-- Mention the verification date. Data changes, so recommend re-running the entry's probe script.
+- Mention the verification date. It is when the checks ran; the data snapshot named next to it is
+  what they covered (for example one month of trips). Data changes, so recommend re-running the
+  entry's probe script.
 - Treat "Why employers may care" and "How it differs" as editorial judgement, not fact.
 - The catalog is deliberately small. If nothing fits the user, say so, then help with your own
   ideas while making clear those ideas have not been verified.
@@ -93,12 +95,13 @@ def build_server(entries: tuple[Opportunity, ...] | None = None) -> MCPServer:
             raise ToolError(f"Unknown id {id!r}. Valid ids: {', '.join(sorted(by_id))}")
         metadata = {
             "verified_on": entry.verified_on.isoformat(),
+            "data_snapshot": entry.feasibility.probe.data_snapshot,
             "roles": entry.roles,
             "skills": entry.skills,
             "domains": entry.domains,
             "preparation_effort": entry.preparation.effort,
             "datasets": [{"name": d.name, "landing_url": str(d.landing_url), "license": d.license.name} for d in entry.datasets],
-            "claim_status_counts": {s: sum(c.status == s for c in entry.claims()) for s in ("verified", "reported", "unverified")},
+            "claim_status_counts": {s: entry.statuses().count(s) for s in ("verified", "reported", "unverified")},
         }
         return {"id": entry.id, "title": entry.title, "text": to_markdown(entry), "url": entry_url(entry), "metadata": metadata}
 

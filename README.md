@@ -45,6 +45,23 @@ every number the entry quotes, so anyone can re-run it. A cheap **source check**
 
 ## Use it
 
+### Hosted server (nothing to install)
+
+`https://portfolio-project-finder.vercel.app/mcp` is public, read-only and needs no authentication.
+
+- **claude.ai:** Customize → Connectors → Add custom connector. Enter a name (e.g. `Portfolio Atlas`)
+  and the URL above, leave authentication empty, then switch the connector on in a chat. Tested on
+  2026-11-05.
+- **ChatGPT** (paid plans): Settings → Apps & Connectors → Advanced → turn on Developer mode, then
+  create a connector with the URL above and "No authentication". Not tested yet.
+- **Claude Code:** `claude mcp add --transport http portfolio-atlas https://portfolio-project-finder.vercel.app/mcp`.
+  Not tested against the hosted server.
+
+Then ask, for example: *"Use Portfolio Atlas to suggest a project for an operations analyst role,
+and tell me which claims are verified."*
+
+### Run it locally
+
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/). No clone is needed: `uvx` installs
 the server straight from this repository.
 
@@ -56,9 +73,6 @@ claude mcp add portfolio-atlas -- uvx --from git+https://github.com/omidgolchin/
 
 If you have a local clone, use `uv run --directory /absolute/path/to/portfolio-project-finder portfolio-atlas`
 as the command instead.
-
-Then ask, for example: *"Use portfolio-atlas to suggest a project for an operations analyst role,
-and tell me which claims are verified."*
 
 **Claude Desktop**: add this to `claude_desktop_config.json` (not tested here; you may need the
 full path to `uvx`):
@@ -74,9 +88,8 @@ full path to `uvx`):
 }
 ```
 
-**ChatGPT and claude.ai on the web** can only connect to a *remote* server on the public internet.
-The server already speaks Streamable HTTP (`portfolio-atlas --http --host 0.0.0.0 --port 8000`
-serves `/mcp`), but it is not hosted anywhere yet; see [What remains](#what-remains-before-offering-it-publicly).
+**Your own HTTP server:** `portfolio-atlas --http --host 0.0.0.0 --port 8000` serves the same app as
+the hosted one at `/mcp`; any ASGI server can also run `portfolio_atlas.asgi:app`.
 
 **Any MCP client**, e.g. the MCP Inspector CLI:
 
@@ -115,14 +128,15 @@ and runs the source check weekly.
   it costs nothing.
 - **Verification in the schema.** A dataset without a verified fact, or a "reported" claim without
   a source, fails to load.
-- **No hosting yet.** Local stdio use costs nothing; choosing a host is the main open decision.
+- **Hosted on Vercel's free Hobby plan.** The HTTP app is stateless, so any serverless instance can
+  answer any request. Vercel loads `src.portfolio_atlas.asgi:app` (set in `pyproject.toml`) and
+  redeploys on every push to `main`.
 
 ## What remains before offering it publicly
 
-1. **Host the HTTP server at a public HTTPS URL.** ChatGPT and claude.ai both require one. The
-   server is stateless, read-only and serves public data, so a free tier on a small Python host
-   should do; rate limiting belongs at the host. Then test it in ChatGPT developer mode and as a
-   claude.ai custom connector. Neither has been tested.
+1. **Test more widely.** The hosted server has been tried with one prompt as a claude.ai custom
+   connector; ChatGPT developer mode is untested. Keep an eye on the Vercel project's usage page,
+   since the free plan has usage limits.
 2. **Fill domain gaps with the same rigor.** Healthcare (CMS), finance (SEC EDGAR, CFPB, HMDA),
    HR and wages (DOL H-1B disclosures) and marketing analytics are common analyst domains, but
    those publishers were blocked by the build environment's network policy, so nothing was verified
