@@ -5,6 +5,7 @@ import socket
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.request
 
 import pytest
@@ -34,11 +35,10 @@ def payload(result):
 
 
 def test_citation_urls_point_at_files_in_this_repo():
-    repo = Path(__file__).resolve().parents[1]
     for entry in load_catalog():
         url = entry_url(entry)
         assert url.startswith(f"{REPO_URL}/blob/main/")
-        assert (repo / url.removeprefix(f"{REPO_URL}/blob/main/")).is_file(), url
+        assert (REPO / url.removeprefix(f"{REPO_URL}/blob/main/")).is_file(), url
 
 
 async def test_exposes_only_read_only_search_and_fetch():
@@ -88,17 +88,25 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+REPO = Path(__file__).resolve().parents[1]
+VERCEL_ENTRYPOINT = tomllib.loads((REPO / "pyproject.toml").read_text())["tool"]["vercel"]["entrypoint"]
 HTTP_COMMANDS = {
     "cli": ["-m", "portfolio_atlas.server", "--http", "--port", "{port}"],
-    "asgi": ["-m", "uvicorn", "portfolio_atlas.asgi:app", "--port", "{port}"],  # how Vercel loads it
+    "vercel-entrypoint": ["-m", "uvicorn", VERCEL_ENTRYPOINT, "--port", "{port}"],  # run from the repo root, as Vercel does
 }
+
+
+def test_vercel_entrypoint_points_at_a_file_from_the_repo_root():
+    module, _, attribute = VERCEL_ENTRYPOINT.partition(":")
+    assert attribute == "app"
+    assert (REPO / (module.replace(".", "/") + ".py")).is_file(), VERCEL_ENTRYPOINT
 
 
 @pytest.fixture(params=sorted(HTTP_COMMANDS))
 def http_server(request):
     port = free_port()
     args = [a.format(port=port) for a in HTTP_COMMANDS[request.param]]
-    proc = subprocess.Popen([sys.executable, *args], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen([sys.executable, *args], cwd=REPO, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(100):
             try:

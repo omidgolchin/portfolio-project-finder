@@ -23,7 +23,8 @@ portfolio-atlas = "portfolio_atlas.server:main"
 portfolio-atlas-check = "portfolio_atlas.checks:main"
 
 [tool.vercel]
-entrypoint = "portfolio_atlas.asgi:app"
+# Vercel resolves this as a file path from the repository root, hence the src. prefix.
+entrypoint = "src.portfolio_atlas.asgi:app"
 
 [build-system]
 requires = ["hatchling"]
